@@ -25,6 +25,3 @@ services:
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:8420}
     env_file:
       - .env
-    depends_on:
-      db:
-        condition: service_healthy
