@@ -19,6 +19,20 @@ pub struct Config {
 
 impl Config {
     pub fn from_env() -> anyhow::Result<Self> {
+        let server_base_url = env::var("SERVER_BASE_URL")
+            .unwrap_or_else(|_| "http://localhost:8420".to_string());
+        let clean_base_url = server_base_url.trim_end_matches('/').to_string();
+
+        let google_redirect_uri = env::var("GOOGLE_REDIRECT_URI")
+            .ok()
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or_else(|| format!("{}/api/v1/auth/callback/google", clean_base_url));
+
+        let github_redirect_uri = env::var("GITHUB_REDIRECT_URI")
+            .ok()
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or_else(|| format!("{}/api/v1/auth/callback/github", clean_base_url));
+
         Ok(Config {
             database_url: required_env("DATABASE_URL")?,
             server_port: env::var("SERVER_PORT")
@@ -36,19 +50,16 @@ impl Config {
                 .unwrap_or(30),
             google_client_id: env::var("GOOGLE_CLIENT_ID").unwrap_or_default(),
             google_client_secret: env::var("GOOGLE_CLIENT_SECRET").unwrap_or_default(),
-            google_redirect_uri: env::var("GOOGLE_REDIRECT_URI")
-                .unwrap_or_else(|_| "http://localhost:8420/api/v1/auth/callback/google".to_string()),
+            google_redirect_uri,
             github_client_id: env::var("GITHUB_CLIENT_ID").unwrap_or_default(),
             github_client_secret: env::var("GITHUB_CLIENT_SECRET").unwrap_or_default(),
-            github_redirect_uri: env::var("GITHUB_REDIRECT_URI")
-                .unwrap_or_else(|_| "http://localhost:8420/api/v1/auth/callback/github".to_string()),
+            github_redirect_uri,
             allowed_origins: env::var("ALLOWED_ORIGINS")
                 .unwrap_or_else(|_| "http://localhost:3000".to_string())
                 .split(',')
                 .map(|s| s.trim().to_string())
                 .collect(),
-            server_base_url: env::var("SERVER_BASE_URL")
-                .unwrap_or_else(|_| "http://localhost:8420".to_string()),
+            server_base_url: clean_base_url,
         })
     }
 }
