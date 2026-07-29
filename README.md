@@ -180,6 +180,41 @@ GITHUB_REDIRECT_URI=http://localhost:8420/api/v1/auth/callback/github
 ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8420
 ```
 
+### 🔑 Cara Mendapatkan OAuth Credentials (Google & GitHub)
+
+#### 1. Google OAuth2 (`GOOGLE_CLIENT_ID` & `GOOGLE_CLIENT_SECRET`)
+1. Buka **[Google Cloud Console](https://console.cloud.google.com/)**.
+2. Buat proyek baru (*New Project*) atau pilih proyek yang sudah ada.
+3. Buka menu **APIs & Services** > **OAuth consent screen**:
+   - Pilih User Type: **External** (atau **Internal** jika menggunakan Google Workspace organisasi).
+   - Isi info dasar (App Name, User Support Email, Developer Contact Info).
+   - Pada bagian **Scopes**, tambahkan scope `.../auth/userinfo.email` dan `.../auth/userinfo.profile`.
+   - Simpan dan lanjutkan (*Save and Continue*). Jika status app masih *Testing*, tambahkan email Anda ke daftar **Test users**.
+4. Buka menu **APIs & Services** > **Credentials**:
+   - Klik **+ CREATE CREDENTIALS** > pilih **OAuth client ID**.
+   - Pilih Application type: **Web application**.
+   - Beri nama Client (contoh: `Tabular Server Local`).
+   - Pada bagian **Authorized redirect URIs**, tambahkan:
+     ```text
+     http://localhost:8420/api/v1/auth/callback/google
+     ```
+   - Klik **Create**.
+5. Salin **Client ID** (misal `xxx...apps.googleusercontent.com`) ke `GOOGLE_CLIENT_ID` dan **Client Secret** ke `GOOGLE_CLIENT_SECRET` di file `.env`.
+
+#### 2. GitHub OAuth2 (`GITHUB_CLIENT_ID` & `GITHUB_CLIENT_SECRET`)
+1. Login ke GitHub dan buka **[GitHub Developer Settings - OAuth Apps](https://github.com/settings/developers)**.
+2. Klik tombol **New OAuth App**.
+3. Isi formulir pendaftaran aplikasi:
+   - **Application name**: `Tabular Server` (atau nama pilihan Anda)
+   - **Homepage URL**: `http://localhost:8420`
+   - **Authorization callback URL**:
+     ```text
+     http://localhost:8420/api/v1/auth/callback/github
+     ```
+4. Klik **Register application**.
+5. Salin **Client ID** yang muncul dan tempel ke `GITHUB_CLIENT_ID` di file `.env`.
+6. Klik tombol **Generate a new client secret**, lalu salin nilai secret tersebut ke `GITHUB_CLIENT_SECRET` di file `.env`.
+
 ---
 
 ## 🏁 Getting Started
