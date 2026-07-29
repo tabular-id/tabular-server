@@ -415,36 +415,66 @@ async fn upsert_user(
     display_name: &Option<String>,
     avatar_url: &Option<String>,
 ) -> Result<User> {
-    let user_id = uuid::Uuid::new_v4().to_string();
-
-    sqlx::query(
-        "INSERT INTO users (id, provider, provider_id, email, display_name, avatar_url)
-         VALUES (?, ?, ?, ?, ?, ?)
-         ON DUPLICATE KEY UPDATE
-             email = VALUES(email),
-             display_name = VALUES(display_name),
-             avatar_url = VALUES(avatar_url),
-             updated_at = CURRENT_TIMESTAMP"
+    // 1. Check if user exists by (provider, provider_id) or email
+    let existing: Option<User> = sqlx::query_as(
+        "SELECT id, provider, provider_id, email, display_name, avatar_url, created_at, updated_at
+         FROM users WHERE (provider = ? AND provider_id = ?) OR email = ?"
     )
-    .bind(&user_id)
     .bind(provider)
     .bind(provider_id)
     .bind(email)
-    .bind(display_name)
-    .bind(avatar_url)
-    .execute(pool)
+    .fetch_optional(pool)
     .await?;
 
-    let user: User = sqlx::query_as(
-        "SELECT id, provider, provider_id, email, display_name, avatar_url, created_at, updated_at
-         FROM users WHERE provider = ? AND provider_id = ?"
-    )
-    .bind(provider)
-    .bind(provider_id)
-    .fetch_one(pool)
-    .await?;
+    if let Some(user) = existing {
+        // Update user info
+        sqlx::query(
+            "UPDATE users SET provider = ?, provider_id = ?, email = ?, display_name = ?, avatar_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+        )
+        .bind(provider)
+        .bind(provider_id)
+        .bind(email)
+        .bind(display_name)
+        .bind(avatar_url)
+        .bind(&user.id)
+        .execute(pool)
+        .await?;
 
-    Ok(user)
+        let updated_user: User = sqlx::query_as(
+            "SELECT id, provider, provider_id, email, display_name, avatar_url, created_at, updated_at
+             FROM users WHERE id = ?"
+        )
+        .bind(&user.id)
+        .fetch_one(pool)
+        .await?;
+
+        Ok(updated_user)
+    } else {
+        // Insert new user
+        let new_id = uuid::Uuid::new_v4().to_string();
+        sqlx::query(
+            "INSERT INTO users (id, provider, provider_id, email, display_name, avatar_url)
+             VALUES (?, ?, ?, ?, ?, ?)"
+        )
+        .bind(&new_id)
+        .bind(provider)
+        .bind(provider_id)
+        .bind(email)
+        .bind(display_name)
+        .bind(avatar_url)
+        .execute(pool)
+        .await?;
+
+        let new_user: User = sqlx::query_as(
+            "SELECT id, provider, provider_id, email, display_name, avatar_url, created_at, updated_at
+             FROM users WHERE id = ?"
+        )
+        .bind(&new_id)
+        .fetch_one(pool)
+        .await?;
+
+        Ok(new_user)
+    }
 }
 
 // ─── Helper for URL encoding ──────────────────────────────────────────────────
