@@ -10,7 +10,7 @@ services:
     ports:
       - "${SERVER_PORT:-8420}:8420"
     environment:
-      - DATABASE_URL=mysql://tabular_user:tabular_password@db:3306/tabular_server
+      - DATABASE_URL=${DATABASE_URL}
       - SERVER_PORT=8420
       - SERVER_BASE_URL=${SERVER_BASE_URL:-http://localhost:8420}
       - JWT_SECRET=${JWT_SECRET:-change-this-to-a-long-random-secret-in-production}
