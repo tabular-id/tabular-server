@@ -1,6 +1,6 @@
 use axum::{
     extract::{Query, State},
-    response::Redirect,
+    response::{Html, IntoResponse, Redirect, Response},
     Json,
 };
 use chrono::Utc;
@@ -34,6 +34,11 @@ impl OAuthProvider {
 // ─── Request/Response types ──────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
+pub struct LoginQueryParams {
+    pub port: Option<u16>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct OAuthCallbackQuery {
     pub code: String,
     pub state: String,
@@ -56,6 +61,7 @@ pub struct LogoutRequest {
 pub async fn handle_login_redirect(
     State(state): State<AppState>,
     provider: OAuthProvider,
+    query: LoginQueryParams,
 ) -> Result<Redirect> {
     // Generate CSRF state nonce
     let state_token: String = (0..32)
@@ -66,10 +72,11 @@ pub async fn handle_login_redirect(
     // Store state in DB with 10-minute expiry
     let expires_at = Utc::now() + chrono::Duration::minutes(10);
     sqlx::query(
-        "INSERT INTO oauth_states (state, provider, expires_at) VALUES (?, ?, ?)"
+        "INSERT INTO oauth_states (state, provider, redirect_port, expires_at) VALUES (?, ?, ?, ?)"
     )
     .bind(&state_token)
     .bind(provider.as_str())
+    .bind(query.port.map(|p| p as i32))
     .bind(&expires_at)
     .execute(&state.db)
     .await?;
@@ -109,13 +116,19 @@ pub async fn handle_login_redirect(
 }
 
 /// GET /api/v1/auth/login/google  (route adapter)
-pub async fn login_google(State(app): State<AppState>) -> Result<Redirect> {
-    handle_login_redirect(State(app), OAuthProvider::Google).await
+pub async fn login_google(
+    State(app): State<AppState>,
+    Query(query): Query<LoginQueryParams>,
+) -> Result<Redirect> {
+    handle_login_redirect(State(app), OAuthProvider::Google, query).await
 }
 
 /// GET /api/v1/auth/login/github  (route adapter)
-pub async fn login_github(State(app): State<AppState>) -> Result<Redirect> {
-    handle_login_redirect(State(app), OAuthProvider::GitHub).await
+pub async fn login_github(
+    State(app): State<AppState>,
+    Query(query): Query<LoginQueryParams>,
+) -> Result<Redirect> {
+    handle_login_redirect(State(app), OAuthProvider::GitHub, query).await
 }
 
 // ─── OAuth callback ──────────────────────────────────────────────────────────
@@ -124,7 +137,7 @@ pub async fn login_github(State(app): State<AppState>) -> Result<Redirect> {
 pub async fn callback_google(
     State(app): State<AppState>,
     Query(q): Query<OAuthCallbackQuery>,
-) -> Result<Json<ApiResponse<AuthTokenResponse>>> {
+) -> Result<Response> {
     handle_callback(app, q, OAuthProvider::Google).await
 }
 
@@ -132,7 +145,7 @@ pub async fn callback_google(
 pub async fn callback_github(
     State(app): State<AppState>,
     Query(q): Query<OAuthCallbackQuery>,
-) -> Result<Json<ApiResponse<AuthTokenResponse>>> {
+) -> Result<Response> {
     handle_callback(app, q, OAuthProvider::GitHub).await
 }
 
@@ -140,10 +153,10 @@ async fn handle_callback(
     app: AppState,
     query: OAuthCallbackQuery,
     provider: OAuthProvider,
-) -> Result<Json<ApiResponse<AuthTokenResponse>>> {
+) -> Result<Response> {
     // Validate state nonce
     let stored_state: Option<OAuthState> = sqlx::query_as(
-        "SELECT state, provider, code_verifier, expires_at FROM oauth_states
+        "SELECT state, provider, code_verifier, redirect_port, expires_at FROM oauth_states
          WHERE state = ? AND provider = ? AND expires_at > NOW()"
     )
     .bind(&query.state)
@@ -151,7 +164,7 @@ async fn handle_callback(
     .fetch_optional(&app.db)
     .await?;
 
-    let _state_record = stored_state
+    let state_record = stored_state
         .ok_or_else(|| AppError::BadRequest("Invalid or expired OAuth state".to_string()))?;
 
     // Consume the state nonce (prevent replay)
@@ -191,12 +204,58 @@ async fn handle_callback(
     .execute(&app.db)
     .await?;
 
-    Ok(Json(ApiResponse::ok(AuthTokenResponse {
+    let token_resp = AuthTokenResponse {
         access_token,
         refresh_token,
         expires_in: app.config.jwt_access_expiry_minutes * 60,
         user: UserResponse::from(user),
-    })))
+    };
+
+    if let Some(port) = state_record.redirect_port {
+        let token_json = serde_json::to_string(&token_resp).unwrap_or_default();
+        let html = format!(
+            r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tabular — Sign in Successful</title>
+    <style>
+        body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }}
+        .card {{ background: #1e293b; padding: 2.5rem; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); text-align: center; max-width: 420px; border: 1px solid #334155; }}
+        .icon {{ font-size: 48px; margin-bottom: 12px; }}
+        h2 {{ color: #38bdf8; margin: 0 0 8px 0; font-size: 24px; }}
+        p {{ color: #94a3b8; font-size: 15px; line-height: 1.5; margin: 0 0 16px 0; }}
+        .status {{ font-size: 13px; color: #4ade80; background: rgba(74,222,128,0.1); padding: 8px 12px; border-radius: 8px; display: inline-block; }}
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="icon">✨</div>
+        <h2>Sign in Successful!</h2>
+        <p>Your Tabular account has been authenticated. You can close this tab and return to the Tabular desktop app.</p>
+        <div class="status">Account Sync Active</div>
+    </div>
+    <script>
+        const tokens = {};
+        const callbackUrl = 'http://127.0.0.1:{}/callback';
+        fetch(callbackUrl, {{
+            method: 'POST',
+            headers: {{ 'Content-Type': 'application/json' }},
+            body: JSON.stringify(tokens)
+        }}).catch(() => {{
+            window.location.href = callbackUrl + '?token=' + encodeURIComponent(JSON.stringify(tokens));
+        }});
+    </script>
+</body>
+</html>"#,
+            token_json, port
+        );
+
+        Ok(Html(html).into_response())
+    } else {
+        Ok(Json(ApiResponse::ok(token_resp)).into_response())
+    }
 }
 
 // ─── Token refresh ─────────────────────────────────────────────────────────

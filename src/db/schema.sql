@@ -97,6 +97,7 @@ CREATE TABLE IF NOT EXISTS oauth_states (
     state       VARCHAR(128) NOT NULL PRIMARY KEY,
     provider    VARCHAR(20)  NOT NULL,
     code_verifier VARCHAR(256),
+    redirect_port INT          DEFAULT NULL,
     expires_at  DATETIME     NOT NULL,
     created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_oauth_expires (expires_at)

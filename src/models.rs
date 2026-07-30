@@ -171,6 +171,7 @@ pub struct OAuthState {
     pub state: String,
     pub provider: String,
     pub code_verifier: Option<String>,
+    pub redirect_port: Option<i32>,
     pub expires_at: DateTime<Utc>,
 }
 

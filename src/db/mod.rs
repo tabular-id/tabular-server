@@ -42,6 +42,9 @@ pub async fn run_migrations(pool: &MySqlPool) -> anyhow::Result<()> {
         })?;
     }
 
+    // Ensure redirect_port column exists in existing tables (ignore error if already exists)
+    let _ = sqlx::query("ALTER TABLE oauth_states ADD COLUMN redirect_port INT DEFAULT NULL").execute(pool).await;
+
     tracing::info!("✅ Schema migrations complete");
     Ok(())
 }
